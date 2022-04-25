@@ -1,0 +1,14 @@
+{
+  "name": "@vue/shared",
+  "version": "0.0.1",
+  "main": "index.js",
+  "license": "MIT",
+  "module": "dist/reactivity.esm-bundler.js",
+  "buildOptions":{
+    "name": "VueShared",
+    "formats": [
+      "esm-bundler",
+      "cjs"
+    ]
+  }
+}
