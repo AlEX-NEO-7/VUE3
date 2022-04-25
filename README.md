@@ -3,7 +3,7 @@ This project is part of the vue3 source code simulated by rollup.
 Please use yarn to install dependencies.
 # contain
 The project includes @vue/runtime-dom、@vue/runtime-core and @vue/reactivity.
-The @vue/compiler section is still being written
+The @vue/compiler section is still being written.
 ```
                                     +---------------------+
                                     |                     |
