@@ -1,23 +1,28 @@
 export const extend = Object.assign;
 
-export const isObject = (value: any): boolean => value instanceof Object;
+export const isObject = (value: unknown): value is {} => value instanceof Object;
 
 export const isArray = Array.isArray;
 
-export const isNumber = (value: any): boolean => typeof value === "number";
+export const isSymbol = (value: unknown): value is symbol => typeof value === "symbol";
 
-export const isString = (value: any): boolean => typeof value === "string";
+export const isNumber = (value: unknown): value is number => typeof value === "number";
 
-export const isFunction = (value: any): boolean => typeof value === "function";
+export const isString = (value: unknown): value is string => typeof value === "string";
 
-export const isIntegerKey = (key: any):boolean => parseInt(key) + "" === key;
+export const isFunction = (value: unknown): value is Function => typeof value === "function";
+
+export const isIntegerKey = (key: unknown): boolean => isString(key) &&
+   key !== 'NaN' &&
+   key[0] !== '-' &&
+   '' + parseInt(key, 10) === key;
 
 let own = Object.prototype.hasOwnProperty;
-export const hasOwn = (target: {}, key: PropertyKey):boolean => own.call(target, key);
+export const hasOwn = (target: object, key: string | symbol): boolean => own.call(target, key);
 
-export const hasChanged = (oldVal: any, newVal: any): boolean => oldVal !== newVal;
+export const hasChanged = (oldValue: any, value: any): boolean => !Object.is(value, oldValue);
 
-export const enum ShapeFlags{ // 二进制移位
+export const enum ShapeFlags { // 二进制移位
    ELEMENT = 1,
    FUNCTIONAL_COMPONENT = 1 << 1, // 函数式组件
    STATEFUL_COMPONENT = 1 << 2,   // 普通组件
