@@ -1,26 +1,90 @@
+/**
+ * @private
+ * 合并对象
+ */
 export const extend = Object.assign;
 
+/**
+ * @private
+ * 判断是否为对象
+ */
 export const isObject = (value: unknown): value is {} => value instanceof Object;
 
+/**
+ * @private
+ * 判断是否为数组
+ */
 export const isArray = Array.isArray;
 
+/**
+ * @private
+ * 判断是否为Symbol
+ */
 export const isSymbol = (value: unknown): value is symbol => typeof value === "symbol";
 
+/**
+ * @private
+ * 判断是否为数字
+ */
 export const isNumber = (value: unknown): value is number => typeof value === "number";
 
+/**
+ * @private
+ * 判断是否为字符串
+ */
 export const isString = (value: unknown): value is string => typeof value === "string";
 
+/**
+ * @private
+ * 判断是否为函数
+ */
 export const isFunction = (value: unknown): value is Function => typeof value === "function";
 
+/**
+ * @private
+ * 判断key值是否为数字类型
+ */
 export const isIntegerKey = (key: unknown): boolean => isString(key) &&
    key !== 'NaN' &&
    key[0] !== '-' &&
    '' + parseInt(key, 10) === key;
 
 let own = Object.prototype.hasOwnProperty;
+/**
+ * @private
+ * 判断key是否为target对象上的属性
+ */
 export const hasOwn = (target: object, key: string | symbol): boolean => own.call(target, key);
 
+/**
+ * @private
+ * 判断两个value是否一致
+ */
 export const hasChanged = (oldValue: any, value: any): boolean => !Object.is(value, oldValue);
+
+const camelizeRE = /-(\w)/g;
+/**
+ * @private
+ * 把烤肉串命名方式转换成驼峰命名方式
+ */
+export const camelize = (value: string): string => {
+   return value.replace(camelizeRE, (_, c) => c ? c.toUpperCase() : "")
+}
+
+// on+一个大写字母格式开头
+export const isOn = (key: any): boolean => /^on[A-Z]/.test(key);
+
+/**
+ * @private
+ * 首字母大写
+ */
+export const capitalize = (value: string):string => value.charAt(0).toUpperCase() + value.slice(1);
+
+/**
+ * @private
+ * 添加 on 前缀，并且首字母大写
+ */
+export const toHandlerKey = (value: string):string => value ? `on${capitalize(value)}` : ``;
 
 export const enum ShapeFlags { // 二进制移位
    ELEMENT = 1,

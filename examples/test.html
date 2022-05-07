@@ -11,68 +11,16 @@
 <body>
    <div id="app"></div>
    <script src="../packages/vue/dist/vue.global.js"></script>
-   <script>
-      // a b c d    1 1 0
-      // a c d
-      // import { ref, h, createApp } from '../packages/vue/dist/vue.global.js'
-      let {
-         ref,
-         h,
-         createApp
-      } = Vue;
-      // reactive,
-      // shallowReactive,
-      // readonly,
-      // shallowReadonly,
-      // effect,
-      // ref,
-      // shallowRef,
-      // isRef,
-      // toRefs,
-      // toRaw,
-      // computed,
-      // createApp
-      // setup
-      // render
-      // h
+   <script type="module">
+      import App from './App.js';
+      // let {
+      //    ref,
+      //    h,
+      //    createApp
+      // } = Vue;
+      // console.log(Vue);
 
-      let App = {
-         props: {
-            title: '2077'
-         },
-         setup(props, ctx) {
-            let flag = ref(true);
-
-            setTimeout(() => {
-               flag.value = !flag.value;
-            }, 1000)
-            return {
-               flag
-            }
-         },
-         render(proxy) {
-            return this.flag.value ? h('div', {style: {color: 'red'}, class:"abc"}, [
-               h('li', {key: 'a'}, 'a'),
-               h('li', {key: 'b'}, 'b'),
-               h('li', {key: 'c'}, 'c'),
-               h('li', {key: 'd'}, 'd'),
-               h('li', {key: 'e'}, 'e'),
-               h('li', {key: 'f'}, 'f'),
-               h('li', {key: 'g'}, 'g'),
-            ]) : h('div', {style: {color: 'green'}, class:"cde"}, [
-               h('li', {key: 'a'}, 'a'),
-               h('li', {key: 'b'}, 'b'),
-               h('li', {key: 'f'}, 'f'),
-               h('li', {key: 'g'}, 'g'),
-            ])
-         }
-      }
-      // a b d f g c    2 4 3
-      // a b g f c
-      createApp(App, {
-         title: "L",
-         time: '2077'
-      }).mount('#app');
+      // createApp(App).mount('#app');
    </script>
 </body>
 

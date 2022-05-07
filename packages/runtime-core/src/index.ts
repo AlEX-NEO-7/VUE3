@@ -1,7 +1,5 @@
-
-
 export { h } from './h'
 export * from '@vue/reactivity'
-
-
+export { inject, provide } from './injectAPI'
 export { createRenderer } from './renderer'
+export { renderSlot } from './helpers/renderSlot'

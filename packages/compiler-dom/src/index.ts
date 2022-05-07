@@ -1,3 +1,0 @@
-export {
-   compile
-} from './compile'

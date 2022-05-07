@@ -3,13 +3,20 @@ import { ReactiveEffect, track, trigger } from "./effect";
 import { TrackOpTypes, TriggerOrTypes } from "./operators";
 import { toRaw } from "./ref";
 
+type BasicType = number | string | boolean | undefined | null | Symbol;
+interface IAccessorOptions{
+   get: Function,
+   set: Function
+} 
+type computedVar = Function | IAccessorOptions;
+
 class ComputedRefImpl {
    _setter: Function;
    _dirty: boolean;  // 脏数据标记
    dep: any = undefined;   // 存储dep
    effect: ReactiveEffect; // 计算属性包装的effect
    __v_isRef: boolean;  // ref标记
-   _value: any;   // 存储value值
+   _value: BasicType;   // 存储value值
    constructor(getter: Function, _setter: Function, isReadonly: boolean) {
       this._setter = _setter;
       this._dirty = true;
@@ -34,17 +41,17 @@ class ComputedRefImpl {
       return self._value;
    }
 
-   set value(newValue: any) {
+   set value(newValue: BasicType) {
       this._setter(newValue);
    }
 }
 
-export function computed(getterOrOptions: any) {
+export function computed(getterOrOptions: computedVar) {
    let getter: Function;
    let setter: Function;
    let onlyGetter = isFunction(getterOrOptions);
 
-   if (onlyGetter) {
+   if (isFunction(getterOrOptions)) {
       getter = getterOrOptions;
       setter = () => {
          console.warn("computed value is readonly")
@@ -53,5 +60,7 @@ export function computed(getterOrOptions: any) {
       getter = getterOrOptions.get;
       setter = getterOrOptions.set;
    }
+
    return new ComputedRefImpl(getter, setter, onlyGetter || !setter);
 }
+

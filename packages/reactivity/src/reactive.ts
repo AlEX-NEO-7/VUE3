@@ -1,5 +1,4 @@
 // 各个方法区别 : 1. 是不是仅读     2. 是不是深度
-// 柯里化
 import { isObject } from '@vue/shared'
 import {
    mutableHandlers,
@@ -8,25 +7,25 @@ import {
    shallowReadonlyHandlers
 } from './baseHandlers'
 
-export function reactive(target) {
+export function reactive<T>(target: T):T {
    target["__v_isReactive"] = true;
    target["__v_isReadonly"] = false;
    return createReactiveObject(target, false, mutableHandlers)
 }
 
-export function shallowReactive(target) {
+export function shallowReactive<T>(target: T):T {
    target["__v_isReactive"] = true;
    target["__v_isReadonly"] = false;
    return createReactiveObject(target, false, shallowReactiveHandlers)
 }
 
-export function readonly(target) {
+export function readonly<T>(target: T):T {
    target["__v_isReactive"] = false;
    target["__v_isReadonly"] = true;
    return createReactiveObject(target, true, readonlyHandlers)
 }
 
-export function shallowReadonly(target) {
+export function shallowReadonly<T extends object>(target: T):T {
    target["__v_isReactive"] = false;
    target["__v_isReadonly"] = true;
    return createReactiveObject(target, false, shallowReadonlyHandlers)
@@ -35,7 +34,7 @@ export function shallowReadonly(target) {
 // 拦截数据的读取和数据的修改
 const reactiveMap = new WeakMap();  // 弱引用，会自动进行垃圾回收不会造成内存泄漏，key是对象
 const readonlyMap = new WeakMap();
-export function createReactiveObject(target: any, isReadOnly: boolean, handlers: Object): any {
+export function createReactiveObject<T extends object>(target: T, isReadOnly: boolean, handlers: ProxyHandler<T>): T {
    // reactive API 只拦截对象属性
    if (!isObject(target)) {
       return target;

@@ -6,6 +6,9 @@ import { track, trigger } from "./effect";
 import { TrackOpTypes, TriggerOrTypes } from "./operators";
 import { reactive, readonly } from "./reactive";
 
+type GetFunction = (target: any, p: string | symbol, receiver: any) => any;
+type SetFunction = (target: any, p: string | symbol, value: any, receiver: any) => boolean;
+
 // Getter
 const get = createGetter(false, false);
 const shallowGet = createGetter(false, true);
@@ -17,12 +20,13 @@ const set = createSetter(false);
 const shallowSet = createSetter(true);
 
 let readonlyObject = {  // 只读对象的Setter方法
-   set: (target: any, key: any) => {
+   set: function (target: any, key: any, receiver: any):boolean {
       console.warn(`${key} is a read-only attribute and cannot be modified`);
+      return true;
    }
 }
 
-function createGetter(isReadOnly: boolean = false, shallow: boolean = false): Function { // 拦截获取
+function createGetter(isReadOnly: boolean = false, shallow: boolean = false): GetFunction { // 拦截获取
    return function get(target, key, reciver) {  // reciver为代理对象
       // proxy + reflect
       // Reflect方法具备返回值
@@ -49,8 +53,8 @@ function createGetter(isReadOnly: boolean = false, shallow: boolean = false): Fu
    }
 }
 
-function createSetter(shallow: boolean): Function {  // 拦截设置
-   return function set(target, key, value, reciver) {   // target[key] = value
+function createSetter(shallow: boolean): SetFunction {  // 拦截设置
+   return function set(target, key, value, reciver):boolean {   // target[key] = value
       // 当数据更新时，通知所有对应的属性的effect重新执行
 
       // 区分新增还是修改执行的set
@@ -75,21 +79,21 @@ function createSetter(shallow: boolean): Function {  // 拦截设置
    }
 }
 
-export const mutableHandlers = {
+export const mutableHandlers: ProxyHandler<any> = {
    get,
    set
 };
 
-export const shallowReactiveHandlers = {
+export const shallowReactiveHandlers: ProxyHandler<any> = {
    get: shallowGet,
    set: shallowSet
 };
 
-export const readonlyHandlers = extend({
+export const readonlyHandlers: ProxyHandler<any> = extend({
    get: readonlyGet,
 
 }, readonlyObject);
 
-export const shallowReadonlyHandlers = extend({
+export const shallowReadonlyHandlers: ProxyHandler<any> = extend({
    get: shallowReadonlyGet,
 }, readonlyObject);

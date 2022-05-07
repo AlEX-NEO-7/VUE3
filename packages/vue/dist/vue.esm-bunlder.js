@@ -17,15 +17,68 @@ const nodeOps = {
     querySelector: (selector) => document.querySelector(selector)
 };
 
+/**
+ * @private
+ * 合并对象
+ */
 const extend = Object.assign;
+/**
+ * @private
+ * 判断是否为对象
+ */
 const isObject = (value) => value instanceof Object;
+/**
+ * @private
+ * 判断是否为数组
+ */
 const isArray = Array.isArray;
+/**
+ * @private
+ * 判断是否为字符串
+ */
 const isString = (value) => typeof value === "string";
+/**
+ * @private
+ * 判断是否为函数
+ */
 const isFunction = (value) => typeof value === "function";
-const isIntegerKey = (key) => parseInt(key) + "" === key;
+/**
+ * @private
+ * 判断key值是否为数字类型
+ */
+const isIntegerKey = (key) => isString(key) &&
+    key !== 'NaN' &&
+    key[0] !== '-' &&
+    '' + parseInt(key, 10) === key;
 let own = Object.prototype.hasOwnProperty;
+/**
+ * @private
+ * 判断key是否为target对象上的属性
+ */
 const hasOwn = (target, key) => own.call(target, key);
-const hasChanged = (oldVal, newVal) => oldVal !== newVal;
+/**
+ * @private
+ * 判断两个value是否一致
+ */
+const hasChanged = (oldValue, value) => !Object.is(value, oldValue);
+const camelizeRE = /-(\w)/g;
+/**
+ * @private
+ * 把烤肉串命名方式转换成驼峰命名方式
+ */
+const camelize = (value) => {
+    return value.replace(camelizeRE, (_, c) => c ? c.toUpperCase() : "");
+};
+/**
+ * @private
+ * 首字母大写
+ */
+const capitalize = (value) => value.charAt(0).toUpperCase() + value.slice(1);
+/**
+ * @private
+ * 添加 on 前缀，并且首字母大写
+ */
+const toHandlerKey = (value) => value ? `on${capitalize(value)}` : ``;
 // component = 010 | 100 = 110
 // component & FUN = 010  compoent & STAT = 100
 // 与其他人 与算法 得出来的都为0  这种做法可以确定权限的关系
@@ -327,8 +380,9 @@ const shallowReadonlyGet = createGetter(true, true);
 const set = createSetter();
 const shallowSet = createSetter();
 let readonlyObject = {
-    set: (target, key) => {
+    set: function (target, key, receiver) {
         console.warn(`${key} is a read-only attribute and cannot be modified`);
+        return true;
     }
 };
 function createGetter(isReadOnly = false, shallow = false) {
@@ -567,7 +621,7 @@ function computed(getterOrOptions) {
     let getter;
     let setter;
     let onlyGetter = isFunction(getterOrOptions);
-    if (onlyGetter) {
+    if (isFunction(getterOrOptions)) {
         getter = getterOrOptions;
         setter = () => {
             console.warn("computed value is readonly");
@@ -580,27 +634,13 @@ function computed(getterOrOptions) {
     return new ComputedRefImpl(getter, setter, onlyGetter || !setter);
 }
 
-const createAppAPI = (render) => {
-    return (rootCompont, rootProps) => {
-        const app = {
-            mount(container) {
-                // 1. 创造虚拟节点
-                let vnode = createVNode(rootCompont, rootProps); // h函数
-                // 2. 挂载的核心就是根据传入的组件对象，创造虚拟节点，再把虚拟节点渲染到组件中
-                render(vnode, container);
-            },
-            unmount() { }
-        };
-        return app;
-    };
-};
-
 // 生成组件实例
 function createComponentInstance(vnode) {
     const type = vnode.type;
     const instance = {
-        vnode,
         type,
+        vnode,
+        next: null,
         subTree: null,
         ctx: {},
         props: {},
@@ -612,9 +652,16 @@ function createComponentInstance(vnode) {
         render: null,
         emit: null,
         expose: {},
-        isMounted: false // 组件是否挂载完成
+        isMounted: false,
+        parent,
+        provides: parent ? parent.provides : {}, //  获取 parent 的 provides 作为当前组件的初始化值 这样就可以继承 parent.provides 的属性了
     };
+    // 在prod环境下ctx是以下的简单环境，如果是 dev 会更复杂需要处理
     instance.ctx = { _: instance };
+    // 赋值emit
+    // 使用bind 把 instance 进行绑定
+    // 用户使用时移交 event 和参数即可
+    instance.emit = emit.bind(null, instance);
     return instance;
 }
 // 给组件实例进行赋值
@@ -622,6 +669,8 @@ function setupComponent(instance) {
     const { props, children } = instance.vnode;
     // 组件的props初始化 attrs初始化
     initProps(instance, props);
+    // 插槽的初始化
+    initSlots(instance, children);
     // 启动状态，目的是调用setup函数拿到返回值
     setupStatefulComponent(instance);
 }
@@ -643,6 +692,42 @@ function initProps(instance, rawProps) {
     instance.props = reactive(props);
     instance.attrs = attrs; // 非响应式
 }
+// 初始化emit
+const emit = (instance, event, ...rawArgs) => {
+    // 1. emit 是基于 props 里面的 onXXX 的函数来进行匹配的
+    // 所以我们先从 props 中看看是否有对应的 event handler
+    const props = instance.props;
+    // ex: event -> click 那么这里取的就是 onClick
+    // 让事情变的复杂一点如果是烤肉串命名的话，需要转换成  change-page -> changePage
+    // 需要得到事件名称
+    const handlerName = toHandlerKey(camelize(event));
+    const handler = props[handlerName];
+    if (handler) {
+        handler(...rawArgs);
+    }
+};
+// 初始化slots
+const initSlots = (instance, children) => {
+    const { vnode } = instance;
+    if (vnode.shapeFlag & 32 /* SLOTS_CHILDREN */) {
+        normalizeObjectSlots(children, (instance.slots = {}));
+    }
+};
+// 把 function 返回的值转换成array
+const normalizeSlotValue = (value) => isArray(value) ? value : [value];
+// 特殊对象正常化
+const normalizeObjectSlots = (rawSlots, slots) => {
+    for (const key in rawSlots) {
+        const value = rawSlots[key];
+        if (isFunction(value)) {
+            // 把这个函数给到slots 对象上存起来
+            // 后续在 renderSlots 中调用
+            // TODO 这里没有对 value 做 normalize，
+            // 默认 slots 返回的就是一个 vnode 对象
+            slots[key] = (props) => normalizeSlotValue(value(props));
+        }
+    }
+};
 // 创建一个setup的上下文
 const createSetupContext = (instance) => {
     return {
@@ -685,8 +770,12 @@ const setupStatefulComponent = (instance) => {
     const { setup } = compoent;
     instance.proxy = new Proxy(instance.ctx, PublicInstanceProxyHandles); // 代理上下文处理函数
     if (setup) {
+        // 设置当前 currentInstance 的值， 在调用setup之前
+        setCurrentInstance(instance);
         const setupContext = createSetupContext(instance);
         let setupResult = setup(instance.props, setupContext); // 获取setup返回的值
+        setCurrentInstance(null);
+        // 处理setup的返回结果
         if (isFunction(setupResult)) {
             instance.render = setupResult;
         }
@@ -699,7 +788,130 @@ const setupStatefulComponent = (instance) => {
         instance.render = compoent.render; // 没有写render函数，则使用组件的render
     }
 };
+let currentInstance = {};
+// 这个接口暴露给用户，用户可以在 setup 中获取组件实例 instance
+function getCurrentInstance() {
+    return currentInstance;
+}
+function setCurrentInstance(instance) {
+    currentInstance = instance;
+}
 
+function provide(key, value) {
+    const currentInstance = getCurrentInstance();
+    if (currentInstance) {
+        let { provides } = currentInstance;
+        const parentProvides = currentInstance.parent?.provides;
+        // 这里要解决一个问题
+        // 当父级 key 和 爷爷级别的 key 重复的时候，对于子组件来讲，需要取最近的父级别组件的值
+        // 那这里的解决方案就是利用原型链来解决
+        // provides 初始化的时候是在 createComponent 时处理的，当时是直接把 parent.provides 赋值给组件的 provides 的
+        // 所以，如果说这里发现 provides 和 parentProvides 相等的话，那么就说明是第一次做 provide(对于当前组件来讲)
+        // 我们就可以把 parent.provides 作为 currentInstance.provides 的原型重新赋值
+        // 至于为什么不在 createComponent 的时候做这个处理，可能的好处是在这里初始化的话，是有个懒执行的效果（优化点，只有需要的时候在初始化）
+        if (parentProvides === provides) {
+            provides = currentInstance.provides = Object.create(parentProvides);
+        }
+        provides[key] = value;
+    }
+}
+function inject(key, defaultValue) {
+    const currentInstance = getCurrentInstance();
+    if (currentInstance) {
+        const provides = currentInstance.parent?.provides;
+        if (key in provides) {
+            return provides[key];
+        }
+        else if (defaultValue) {
+            if (typeof defaultValue === "function") {
+                return defaultValue();
+            }
+            return defaultValue;
+        }
+    }
+}
+
+const createAppAPI = (render) => {
+    return (rootCompont, rootProps) => {
+        const app = {
+            mount(container) {
+                // 1. 创造虚拟节点
+                let vnode = createVNode(rootCompont, rootProps); // h函数
+                // 2. 挂载的核心就是根据传入的组件对象，创造虚拟节点，再把虚拟节点渲染到组件中
+                render(vnode, container);
+            },
+            unmount() { },
+            use(plugin, ...options) {
+            }
+        };
+        return app;
+    };
+};
+
+function shouldUpdateComponent(prevVNode, nextVNode) {
+    const { props: prevProps } = prevVNode;
+    const { props: nextProps } = nextVNode;
+    // 如果props发生改变那么component就需要更新
+    if (prevProps === nextProps) {
+        return false;
+    }
+    // 之前props为空，基于nextProps判断是否更新
+    if (!prevProps) {
+        return !!nextProps;
+    }
+    // 之前有 现在没有
+    if (!nextProps) {
+        return true;
+    }
+    // hasPropsChanged 会进行更加细致的对比
+    return hasPropsChanged(prevProps, nextProps);
+}
+function hasPropsChanged(prevProps, nextProps) {
+    const nextKeys = Object.keys(nextProps);
+    if (nextKeys.length !== Object.keys(prevProps).length) {
+        return true;
+    }
+    for (let i = 0; i < nextKeys.length; i++) {
+        const key = nextKeys[i];
+        if (nextProps[key] !== prevProps[key]) {
+            return true;
+        }
+    }
+    return false;
+}
+
+const queue = [];
+const p = Promise.resolve();
+let isFlushPending = false;
+function nextTick(fn) {
+    return fn ? p.then(fn) : p;
+}
+function queueJob(job) {
+    if (!queue.includes(job)) {
+        queue.push(job);
+        queueFlush();
+    }
+}
+function queueFlush() {
+    // 如果同时触发了两个组件的更新的话
+    // 这里就会触发两次 then （微任务逻辑）
+    if (isFlushPending) {
+        return;
+    }
+    isFlushPending = true;
+    nextTick(flushJobs);
+}
+function flushJobs() {
+    isFlushPending = false;
+    let job;
+    while ((job = queue.shift())) {
+        if (job) {
+            job();
+        }
+    }
+}
+
+// 最长上升子序列
 function getSequence(seq) {
     let len = seq.length;
     const result = [0];
@@ -747,42 +959,42 @@ function getSequence(seq) {
 function createRenderer(renderOptions) {
     const { // renderOptions里面的方法
     insert: hostInsert, remove: hostRemove, patchDOMProp: hostPatchProp, createElement: hostCreateElement, createText: hostCreateText, setText: hostSetText, setElementText: HostSetElementText, parentNode: HostParentNode, nextSibling: HostNextSilbing, querySelector: HostQuerySelector } = renderOptions;
-    // 创建渲染effect
-    const setupRenderEffect = (initialVNode, instance, container) => {
-        // 核心是调用render，数据变化，重新调用render
-        const componentUpdateFn = () => {
-            let { proxy } = instance;
-            if (!instance.isMounted) {
-                // 组件初始化流程
-                // 调用render方法（渲染页面的时候会进行取值操作，那么取值的时候会进行依赖收集，收集对应的依赖属性）
-                const subTree = instance.subTree = instance.render.call(proxy, proxy); // 渲染时调用h方法
-                patch(null, subTree, container);
-                initialVNode.el = subTree.el;
-                instance.isMounted = true;
+    // 将虚拟节点变成真实节点渲染到容器中
+    const render = (vnode, container) => {
+        if (vnode == null) {
+            if (container._vnode) { // vnode为空 container有_vnode属性 此时为卸载组件
+                unmount(container._vnode);
             }
-            else {
-                // 组件更新触发effect
-                // diff算法 比较前后两棵树
-                const prevTree = instance.subTree;
-                const nextTree = instance.render.call(proxy, proxy);
-                patch(prevTree, nextTree, container); // 比较两棵树
-            }
-        };
-        const effect = new ReactiveEffect(componentUpdateFn);
-        const update = effect.run.bind(effect);
-        update();
+        }
+        else {
+            // 包括初次渲染和更新 后续会更新patch 
+            patch(container._vnode || null, vnode, container); // 后续更新 prevNode nextNode container
+        }
+        container._vnode = vnode; // 渲染过后把vnode与container绑定
     };
-    // 组件挂载的过程
-    const mountComponent = (initialVNode, container) => {
-        // 根据组件的虚拟dom，创造真实的dom，渲染到容器
-        // 1. 给组件创造一个实例
-        const instance = initialVNode.component = createComponentInstance(initialVNode); // 给组件创造一个实例
-        // 2. 需要给组件实例进行赋值操作
-        setupComponent(instance); // 给组件实例进行赋值操作
-        // 3. 调用render方法实现组件渲染逻辑， 如果依赖的数据发生变化，组件需要重新渲染
-        // 数据和视图是双向绑定的 如果数据变化，视图更新
-        // effect可以用在组件中，这样数据变化后可以自动重新执行effect函数
-        setupRenderEffect(initialVNode, instance, container); // 渲染effect
+    // 组件初次渲染和更新
+    const patch = (n1, n2, container, anchor) => {
+        if (n1 == n2) {
+            return;
+        }
+        // 更新的patch 两个元素标签不一样 key也不一样，直接卸载旧的
+        if (n1 && !isSameVNodeType(n1, n2)) {
+            unmount(n1);
+            n1 = null;
+        }
+        const { shapeFlag, type } = n2;
+        switch (type) {
+            case Text:
+                processText(n1, n2, container);
+                break;
+            default:
+                if (shapeFlag & 6 /* COMPONENT */) { // 判断渲染的是否为组件 
+                    processComponent(n1, n2, container);
+                }
+                else if (shapeFlag & 1 /* ELEMENT */) { // 判断渲染的是否为元素
+                    processElement(n1, n2, container, anchor);
+                }
+        }
     };
     // 处理组件
     const processComponent = (n1, n2, container) => {
@@ -792,37 +1004,57 @@ function createRenderer(renderOptions) {
         }
         else {
             // 组件更新挂载
-            // updateComponent(n1, n2, optimeized);
+            updateComponent(n1, n2);
             console.log("更新");
         }
     };
-    // 子元素挂载
-    const mountChildren = (children, container) => {
-        for (let i = 0; i < children.length; i++) {
-            const child = (children[i] = normalizedVNode(children[i]));
-            patch(null, child, container);
+    // 处理元素（一般是组件对应的返回值）
+    const processElement = (n1, n2, container, anchor) => {
+        if (n1 == null) {
+            // 初始化
+            mountElemnt(n2, container, anchor);
+        }
+        else {
+            // diff
+            patchElement(n1, n2);
         }
     };
-    // 元素挂载的过程
-    const mountElemnt = (vnode, container, anchor) => {
-        // 给元素创建一个实例
-        // vnode中的children 可能是数组，对象数组，字符串数组，字符串
-        let { type, shapeFlag, props, children } = vnode;
-        let el = vnode.el = hostCreateElement(type);
-        if (shapeFlag & 8 /* TEXT_CHILDREN */) {
-            hostSetText(el, children);
+    // 处理文本
+    const processText = (n1, n2, container) => {
+        if (n1 == null) {
+            // 初始化
+            let textNode = hostCreateText(n2.children);
+            n2.el = textNode;
+            hostInsert(textNode, container);
         }
-        else if (shapeFlag & 16 /* ARRAY_CHILDREN */) {
-            mountChildren(children, el);
+    };
+    // 组件更新的过程
+    const updateComponent = (n1, n2, container) => {
+        // 更新组件实例引用
+        const instance = (n2.component = n1.component);
+        // 判断是否应该更新
+        if (shouldUpdateComponent(n1, n2)) {
+            // next就是新的vnode
+            instance.next = n2;
+            // 这里的update是在setupRenderEffect中初始化的
+            // 调用update再次更新调用patch逻辑
+            // 在update中调用的next就变成了n2
+            instance.update();
         }
-        // 处理属性
-        if (props) {
-            for (const key in props) {
-                const value = props[key];
-                hostPatchProp(el, key, null, value);
-            }
+        else {
+            n2.component = n1.component;
+            n2.el = n1.el;
+            instance.vnode = n2;
         }
-        hostInsert(el, container, anchor);
+    };
+    // 对比元素
+    const patchElement = (n1, n2) => {
+        let el = n2.el = n1.el; // 比较元素一致则复用
+        const oldProps = n1.props || {}; // 比较属性
+        const newProps = n2.props || {};
+        patchProps(oldProps, newProps, el);
+        // 比较children，diff核心   diff算法是同级比较
+        patchChildren(n1, n2, el);
     };
     // 对比元素中的属性
     const patchProps = (oldProps, newProps, el) => {
@@ -841,10 +1073,41 @@ function createRenderer(renderOptions) {
             }
         }
     };
-    // 卸载子节点
-    const unmountChildren = (children) => {
-        for (const child of children) {
-            unmount(child);
+    // 对比子节点
+    const patchChildren = (n1, n2, el) => {
+        const c1 = n1 && n1.children;
+        const prevShapeFlag = n1.shapeFlag;
+        const c2 = n2 && n2.children;
+        const shapeFlag = n2.shapeFlag;
+        // c1 和 c2 有哪些类型  (n1为空的情况在processElement阶段已经处理了)
+        // 1. 之前是数组现在是文本   2. 之前是数组，现在也是数组   3. 之前是文本，现在是数组  
+        // 4. 之前是文本现在是空    5. 之前是文本现在是文本     6. 之前是文本现在是空
+        if (shapeFlag & 8 /* TEXT_CHILDREN */) {
+            if (prevShapeFlag & 16 /* ARRAY_CHILDREN */) { // 之前是数组
+                unmountChildren(c1); // 1（把情况1变成情况4）
+            }
+            if (c1 != c2) { // 4 5
+                HostSetElementText(el, c2);
+            }
+        }
+        else { // 现在是数组或空
+            if (prevShapeFlag & 16 /* ARRAY_CHILDREN */) {
+                if (shapeFlag & 16 /* ARRAY_CHILDREN */) { // 2
+                    // 对比两个数组的差异
+                    patchKeyedChildren(c1, c2, el);
+                }
+                else { // 之前是数组 现在是空文本
+                    unmountChildren(c1);
+                }
+            }
+            else { // 之前是文本  3 6 
+                if (prevShapeFlag & 8 /* TEXT_CHILDREN */) {
+                    HostSetElementText(el, '');
+                }
+                if (shapeFlag & 16 /* ARRAY_CHILDREN */) {
+                    mountChildren(c2, el);
+                }
+            }
         }
     };
     // 对比两个同为数组的子节点
@@ -942,114 +1205,122 @@ function createRenderer(renderOptions) {
             }
         }
     };
-    // 对比子节点
-    const patchChildren = (n1, n2, el) => {
-        const c1 = n1 && n1.children;
-        const prevShapeFlag = n1.shapeFlag;
-        const c2 = n2 && n2.children;
-        const shapeFlag = n2.shapeFlag;
-        // c1 和 c2 有哪些类型  (n1为空的情况在processElement阶段已经处理了)
-        // 1. 之前是数组现在是文本   2. 之前是数组，现在也是数组   3. 之前是文本，现在是数组  
-        // 4. 之前是文本现在是空    5. 之前是文本现在是文本     6. 之前是文本现在是空
+    // 组件挂载的过程
+    const mountComponent = (initialVNode, container) => {
+        // 根据组件的虚拟dom，创造真实的dom，渲染到容器
+        // 1. 给组件创造一个实例
+        const instance = initialVNode.component = createComponentInstance(initialVNode); // 给组件创造一个实例
+        // 2. 需要给组件实例进行赋值操作
+        setupComponent(instance); // 给组件实例进行赋值操作
+        // 3. 调用render方法实现组件渲染逻辑， 如果依赖的数据发生变化，组件需要重新渲染
+        // 数据和视图是双向绑定的 如果数据变化，视图更新
+        // effect可以用在组件中，这样数据变化后可以自动重新执行effect函数
+        setupRenderEffect(initialVNode, instance, container); // 渲染effect
+    };
+    // 元素挂载的过程
+    const mountElemnt = (vnode, container, anchor) => {
+        // 给元素创建一个实例
+        // vnode中的children 可能是数组，对象数组，字符串数组，字符串
+        let { type, shapeFlag, props, children } = vnode;
+        let el = vnode.el = hostCreateElement(type);
         if (shapeFlag & 8 /* TEXT_CHILDREN */) {
-            if (prevShapeFlag & 16 /* ARRAY_CHILDREN */) { // 之前是数组
-                unmountChildren(c1); // 1（把情况1变成情况4）
-            }
-            if (c1 != c2) { // 4 5
-                HostSetElementText(el, c2);
-            }
+            hostSetText(el, children);
         }
-        else { // 现在是数组或空
-            if (prevShapeFlag & 16 /* ARRAY_CHILDREN */) {
-                if (shapeFlag & 16 /* ARRAY_CHILDREN */) { // 2
-                    // 对比两个数组的差异
-                    patchKeyedChildren(c1, c2, el);
-                }
-                else { // 之前是数组 现在是空文本
-                    unmountChildren(c1);
-                }
-            }
-            else { // 之前是文本  3 6 
-                if (prevShapeFlag & 8 /* TEXT_CHILDREN */) {
-                    HostSetElementText(el, '');
-                }
-                if (shapeFlag & 16 /* ARRAY_CHILDREN */) {
-                    mountChildren(c2, el);
-                }
+        else if (shapeFlag & 16 /* ARRAY_CHILDREN */) {
+            mountChildren(children, el);
+        }
+        // 处理属性
+        if (props) {
+            for (const key in props) {
+                const value = props[key];
+                hostPatchProp(el, key, null, value);
             }
         }
+        hostInsert(el, container, anchor);
     };
-    // 对比元素
-    const patchElement = (n1, n2) => {
-        let el = n2.el = n1.el; // 比较元素一致则复用
-        const oldProps = n1.props || {}; // 比较属性
-        const newProps = n2.props || {};
-        patchProps(oldProps, newProps, el);
-        // 比较children，diff核心   diff算法是同级比较
-        patchChildren(n1, n2, el);
-    };
-    // 处理元素（一般是组件对应的返回值）
-    const processElement = (n1, n2, container, anchor) => {
-        if (n1 == null) {
-            // 初始化
-            mountElemnt(n2, container, anchor);
-        }
-        else {
-            // diff
-            patchElement(n1, n2);
+    // 子元素挂载
+    const mountChildren = (children, container) => {
+        for (let i = 0; i < children.length; i++) {
+            const child = (children[i] = normalizedVNode(children[i]));
+            patch(null, child, container);
         }
     };
-    // 处理文本
-    const processText = (n1, n2, container) => {
-        if (n1 == null) {
-            // 初始化
-            let textNode = hostCreateText(n2.children);
-            n2.el = textNode;
-            hostInsert(textNode, container);
+    // 创建渲染effect
+    const setupRenderEffect = (initialVNode, instance, container) => {
+        // 核心是调用render，数据变化，重新调用render
+        const componentUpdateFn = () => {
+            let { proxy } = instance;
+            if (!instance.isMounted) {
+                // 组件初始化流程
+                // 调用render方法（渲染页面的时候会进行取值操作，那么取值的时候会进行依赖收集，收集对应的依赖属性）
+                const subTree = instance.subTree = instance.render.call(proxy, proxy); // 渲染时调用h方法
+                patch(null, subTree, container);
+                initialVNode.el = subTree.el;
+                instance.isMounted = true;
+            }
+            else {
+                // 组件更新触发effect
+                // diff算法 比较前后两棵树
+                const { next, vnode } = instance;
+                // 有next 说明需要更新组件的数据
+                if (next) {
+                    next.el = vnode.el;
+                    updateComponentPreRender(instance, next);
+                }
+                const prevTree = instance.subTree;
+                const nextTree = instance.render.call(proxy, proxy);
+                patch(prevTree, nextTree, container); // 比较两棵树
+            }
+        };
+        const effect = new ReactiveEffect(componentUpdateFn, () => {
+            queueJob(instance.update);
+        });
+        const update = effect.run.bind(effect);
+        instance.update = update;
+        update();
+    };
+    function updateComponentPreRender(instance, nextVNode) {
+        nextVNode.component = instance;
+        instance.vnode = nextVNode;
+        instance.next = null;
+        const { props } = nextVNode;
+        instance.props = props;
+    }
+    // 卸载子节点
+    const unmountChildren = (children) => {
+        for (const child of children) {
+            unmount(child);
         }
     };
+    // 卸载节点
     const unmount = (vnode) => {
         hostRemove(vnode.el); // 删除真实节点
-    };
-    // 组件初次渲染和更新
-    const patch = (n1, n2, container, anchor) => {
-        if (n1 == n2) {
-            return;
-        }
-        // 更新的patch 两个元素标签不一样 key也不一样，直接卸载旧的
-        if (n1 && !isSameVNodeType(n1, n2)) {
-            unmount(n1);
-            n1 = null;
-        }
-        const { shapeFlag, type } = n2;
-        switch (type) {
-            case Text:
-                processText(n1, n2, container);
-                break;
-            default:
-                if (shapeFlag & 6 /* COMPONENT */) { // 判断渲染的是否为组件 
-                    processComponent(n1, n2, container);
-                }
-                else if (shapeFlag & 1 /* ELEMENT */) { // 判断渲染的是否为元素
-                    processElement(n1, n2, container, anchor);
-                }
-        }
-    };
-    // 将虚拟节点变成真实节点渲染到容器中
-    const render = (vnode, container) => {
-        if (vnode == null) {
-            if (container._vnode) ;
-        }
-        else {
-            // 包括初次渲染和更新 后续会更新patch 
-            patch(container._vnode || null, vnode, container); // 后续更新 prevNode nextNode container
-        }
-        container._vnode = vnode; // 渲染过后把vnode与container绑定
     };
     return {
         createApp: createAppAPI(render),
         render
     };
+}
+
+/**
+ * Compiler runtime helper for rendering `<slot/>`
+ * 用来 render slot 的
+ * 之前是把 slot 的数据都存在 instance.slots 内(可以看 componentSlot.ts)，
+ * 这里就是取数据然后渲染出来的点
+ * 这个是由 compiler 模块直接渲染出来的 -可以参看这个 demo https://vue-next-template-explorer.netlify.app/#%7B%22src%22%3A%22%3Cdiv%3E%5Cn%20%20%3Cslot%3E%3C%2Fslot%3E%5Cn%3C%2Fdiv%3E%22%2C%22ssr%22%3Afalse%2C%22options%22%3A%7B%22mode%22%3A%22module%22%2C%22prefixIdentifiers%22%3Afalse%2C%22optimizeImports%22%3Afalse%2C%22hoistStatic%22%3Afalse%2C%22cacheHandlers%22%3Afalse%2C%22scopeId%22%3Anull%2C%22inline%22%3Afalse%2C%22ssrCssVars%22%3A%22%7B%20color%20%7D%22%2C%22bindingMetadata%22%3A%7B%22TestComponent%22%3A%22setup-const%22%2C%22setupRef%22%3A%22setup-ref%22%2C%22setupConst%22%3A%22setup-const%22%2C%22setupLet%22%3A%22setup-let%22%2C%22setupMaybeRef%22%3A%22setup-maybe-ref%22%2C%22setupProp%22%3A%22props%22%2C%22vMySetupDir%22%3A%22setup-const%22%7D%2C%22optimizeBindings%22%3Afalse%7D%7D
+ * 其最终目的就是在 render 函数中调用 renderSlot 取 instance.slots 内的数据
+ * TODO 这里应该是一个返回一个 block ,但是暂时还没有支持 block ，所以这个暂时只需要返回一个 vnode 即可
+ * 因为 block 的本质就是返回一个 vnode
+ *
+ * @private
+ */
+function renderSlot(slots, name, props = {}) {
+    const slot = slots[name];
+    console.log(`渲染插槽 slot -> ${name}`);
+    if (slot) {
+        const slotContent = slot(props);
+        return createVNode(6 /* COMPONENT */, {}, slotContent);
+    }
 }
 
 // 需要涵盖dom操作的api、属性操作的api，将这些api传入runtime-core中
@@ -1067,5 +1338,5 @@ const createApp = (component, rootProps) => {
     return app;
 };
 
-export { ReactiveEffect, computed, createApp, createRenderer, effect, h, isRef, reactive, readonly, ref, shallowReactive, shallowReadonly, shallowRef, toRaw, toRefs };
+export { ReactiveEffect, computed, createApp, createRenderer, effect, h, inject, isRef, provide, reactive, readonly, ref, renderSlot, shallowReactive, shallowReadonly, shallowRef, toRaw, toRefs };
 //# sourceMappingURL=vue.esm-bunlder.js.map

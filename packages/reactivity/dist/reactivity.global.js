@@ -1,14 +1,50 @@
 var VueReactivity = (function (exports) {
    'use strict';
 
+   /**
+    * @private
+    * 合并对象
+    */
    const extend = Object.assign;
+   /**
+    * @private
+    * 判断是否为对象
+    */
    const isObject = (value) => value instanceof Object;
+   /**
+    * @private
+    * 判断是否为数组
+    */
    const isArray = Array.isArray;
+   /**
+    * @private
+    * 判断是否为字符串
+    */
+   const isString = (value) => typeof value === "string";
+   /**
+    * @private
+    * 判断是否为函数
+    */
    const isFunction = (value) => typeof value === "function";
-   const isIntegerKey = (key) => parseInt(key) + "" === key;
+   /**
+    * @private
+    * 判断key值是否为数字类型
+    */
+   const isIntegerKey = (key) => isString(key) &&
+       key !== 'NaN' &&
+       key[0] !== '-' &&
+       '' + parseInt(key, 10) === key;
    let own = Object.prototype.hasOwnProperty;
+   /**
+    * @private
+    * 判断key是否为target对象上的属性
+    */
    const hasOwn = (target, key) => own.call(target, key);
-   const hasChanged = (oldVal, newVal) => oldVal !== newVal;
+   /**
+    * @private
+    * 判断两个value是否一致
+    */
+   const hasChanged = (oldValue, value) => !Object.is(value, oldValue);
    // component = 010 | 100 = 110
    // component & FUN = 010  compoent & STAT = 100
    // 与其他人 与算法 得出来的都为0  这种做法可以确定权限的关系
@@ -169,8 +205,9 @@ var VueReactivity = (function (exports) {
    const set = createSetter();
    const shallowSet = createSetter();
    let readonlyObject = {
-       set: (target, key) => {
+       set: function (target, key, receiver) {
            console.warn(`${key} is a read-only attribute and cannot be modified`);
+           return true;
        }
    };
    function createGetter(isReadOnly = false, shallow = false) {
@@ -409,7 +446,7 @@ var VueReactivity = (function (exports) {
        let getter;
        let setter;
        let onlyGetter = isFunction(getterOrOptions);
-       if (onlyGetter) {
+       if (isFunction(getterOrOptions)) {
            getter = getterOrOptions;
            setter = () => {
                console.warn("computed value is readonly");
