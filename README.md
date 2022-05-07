@@ -1,4 +1,4 @@
-# build-my-vue3
+# mini-vue
 This project is part of the vue3 source code simulated by rollup.
 Please use yarn to install dependencies.
 # contain
