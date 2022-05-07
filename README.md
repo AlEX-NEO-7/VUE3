@@ -1,9 +1,9 @@
 # mini-vue
-This project is part of the vue3 source code simulated by rollup.
-Please use yarn to install dependencies.
+该项目是rollup模拟的vue3源代码的一部分, 使用的包管理工具为yarn
 # contain
-The project includes @vue/runtime-dom、@vue/runtime-core and @vue/reactivity.
-The @vue/compiler section is still being written.
+该项目包括@vue/runtime dom、@vue/runtime core和@vue/reactivity。
+
+@vue/compiler部分仍在编写中。
 ```
                                     +---------------------+
                                     |                     |
